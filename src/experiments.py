@@ -1,14 +1,57 @@
 from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, clone
+from sklearn.preprocessing import LabelEncoder
 
 from src.evaluation import (
     EvaluationSplit,
     classification_metrics,
     per_class_f1,
 )
+
+
+@dataclass(frozen=True)
+class Experiment:
+    """Configuration required to run one experiment."""
+
+    data: pd.DataFrame
+    models: dict[str, BaseEstimator]
+    protocols: dict[str, list[EvaluationSplit]]
+    output_path: Path
+
+
+def get_feature_columns(
+    df: pd.DataFrame,
+) -> list[str]:
+    """Return sensor feature columns ordered by feature index."""
+    feature_columns = [
+        column
+        for column in df.columns
+        if column.startswith("feature_")
+    ]
+
+    return sorted(
+        feature_columns,
+        key=lambda column: int(
+            column.split("_", maxsplit=1)[1]
+        ),
+    )
+
+
+def get_class_labels(
+    df: pd.DataFrame,
+) -> tuple[int, ...]:
+    """Return all target classes present in the experiment data."""
+    return tuple(
+        sorted(
+            int(label)
+            for label in df["label"].unique()
+        )
+    )
 
 
 def evaluate_split(
@@ -26,13 +69,23 @@ def evaluate_split(
 
     fitted_model = clone(model)
 
-    fitted_model.fit(
-        train[feature_columns],
+    label_encoder = LabelEncoder()
+
+    y_train = label_encoder.fit_transform(
         train["label"],
     )
 
-    predictions = fitted_model.predict(
+    fitted_model.fit(
+        train[feature_columns],
+        y_train,
+    )
+
+    encoded_predictions = fitted_model.predict(
         validation[feature_columns],
+    )
+
+    predictions = label_encoder.inverse_transform(
+        encoded_predictions.astype(int),
     )
 
     y_true = validation["label"].to_numpy()
@@ -50,7 +103,10 @@ def evaluate_split(
         ),
         "n_train": len(train),
         "n_validation": len(validation),
-        **classification_metrics(y_true, predictions),
+        **classification_metrics(
+            y_true,
+            predictions,
+        ),
     }
 
     class_scores = per_class_f1(
@@ -77,11 +133,7 @@ def evaluate_model(
     class_labels: tuple[int, ...],
     progress_callback: Callable[[int], object] | None = None,
 ) -> pd.DataFrame:
-    """Evaluate one model across a collection of predefined splits.
-
-    ``progress_callback`` is called after every completed split, so callers
-    can show aggregate progress without coupling evaluation to a UI.
-    """
+    """Evaluate one model across a collection of predefined splits."""
     records = []
 
     for split in splits:
@@ -101,3 +153,38 @@ def evaluate_model(
             progress_callback(1)
 
     return pd.DataFrame.from_records(records)
+
+
+def run_experiment(
+    experiment: Experiment,
+    progress_callback: Callable[[int], object] | None = None,
+) -> pd.DataFrame:
+    """Evaluate every model under every protocol in an experiment."""
+    feature_columns = get_feature_columns(
+        experiment.data
+    )
+    class_labels = get_class_labels(
+        experiment.data
+    )
+
+    experiment_results = []
+
+    for model_name, model in experiment.models.items():
+        for protocol_name, splits in experiment.protocols.items():
+            results = evaluate_model(
+                model_name=model_name,
+                protocol=protocol_name,
+                model=model,
+                df=experiment.data,
+                splits=splits,
+                feature_columns=feature_columns,
+                class_labels=class_labels,
+                progress_callback=progress_callback,
+            )
+
+            experiment_results.append(results)
+
+    return pd.concat(
+        experiment_results,
+        ignore_index=True,
+    )
