@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, clone
@@ -73,19 +75,29 @@ def evaluate_model(
     splits: list[EvaluationSplit],
     feature_columns: list[str],
     class_labels: tuple[int, ...],
+    progress_callback: Callable[[int], object] | None = None,
 ) -> pd.DataFrame:
-    """Evaluate one model across a collection of predefined splits."""
-    records = [
-        evaluate_split(
-            model_name=model_name,
-            protocol=protocol,
-            model=model,
-            df=df,
-            split=split,
-            feature_columns=feature_columns,
-            class_labels=class_labels,
+    """Evaluate one model across a collection of predefined splits.
+
+    ``progress_callback`` is called after every completed split, so callers
+    can show aggregate progress without coupling evaluation to a UI.
+    """
+    records = []
+
+    for split in splits:
+        records.append(
+            evaluate_split(
+                model_name=model_name,
+                protocol=protocol,
+                model=model,
+                df=df,
+                split=split,
+                feature_columns=feature_columns,
+                class_labels=class_labels,
+            )
         )
-        for split in splits
-    ]
+
+        if progress_callback is not None:
+            progress_callback(1)
 
     return pd.DataFrame.from_records(records)

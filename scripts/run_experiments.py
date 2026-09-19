@@ -1,5 +1,6 @@
 import pandas as pd
 from sklearn.base import BaseEstimator
+from tqdm import tqdm
 
 from src.config import (
     PROCESSED_DATA_PATH,
@@ -59,7 +60,6 @@ def build_models() -> dict[str, BaseEstimator]:
         "logistic_regression": build_logistic_regression(),
     }
 
-
 def build_protocols(
     development: pd.DataFrame,
 ) -> dict[str, list[EvaluationSplit]]:
@@ -83,22 +83,31 @@ def run_experiments(
 
     models = build_models()
     protocols = build_protocols(development)
+    total_splits = len(models) * sum(
+        len(splits) for splits in protocols.values()
+    )
 
     experiment_results = []
 
-    for model_name, model in models.items():
-        for protocol_name, splits in protocols.items():
-            results = evaluate_model(
-                model_name=model_name,
-                protocol=protocol_name,
-                model=model,
-                df=development,
-                splits=splits,
-                feature_columns=feature_columns,
-                class_labels=class_labels,
-            )
+    with tqdm(
+        total=total_splits,
+        desc="Running experiments",
+        unit="split",
+    ) as progress_bar:
+        for model_name, model in models.items():
+            for protocol_name, splits in protocols.items():
+                results = evaluate_model(
+                    model_name=model_name,
+                    protocol=protocol_name,
+                    model=model,
+                    df=development,
+                    splits=splits,
+                    feature_columns=feature_columns,
+                    class_labels=class_labels,
+                    progress_callback=progress_bar.update,
+                )
 
-            experiment_results.append(results)
+                experiment_results.append(results)
 
     return pd.concat(
         experiment_results,
