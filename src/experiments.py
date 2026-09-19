@@ -24,6 +24,14 @@ class Experiment:
     output_path: Path
 
 
+@dataclass(frozen=True)
+class ExperimentOutput:
+    """Metrics and prediction records produced by an experiment run."""
+
+    metrics: pd.DataFrame
+    predictions: pd.DataFrame
+
+
 def get_feature_columns(
     df: pd.DataFrame,
 ) -> list[str]:
@@ -62,8 +70,8 @@ def evaluate_split(
     split: EvaluationSplit,
     feature_columns: list[str],
     class_labels: tuple[int, ...],
-) -> dict:
-    """Evaluate one model on one predefined split."""
+) -> tuple[dict, pd.DataFrame]:
+    """Evaluate one model and retain its validation predictions."""
     train = df.iloc[split.train_indices]
     validation = df.iloc[split.validation_indices]
 
@@ -120,7 +128,18 @@ def evaluate_split(
             np.nan,
         )
 
-    return result
+    prediction_records = pd.DataFrame(
+        {
+            "model": model_name,
+            "protocol": protocol,
+            "split": split.name,
+            "validation_batch": validation["batch"].to_numpy(),
+            "actual": y_true,
+            "predicted": predictions,
+        }
+    )
+
+    return result, prediction_records
 
 
 def evaluate_model(
@@ -132,34 +151,38 @@ def evaluate_model(
     feature_columns: list[str],
     class_labels: tuple[int, ...],
     progress_callback: Callable[[int], object] | None = None,
-) -> pd.DataFrame:
-    """Evaluate one model across a collection of predefined splits."""
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Evaluate one model across splits and retain every prediction."""
     records = []
+    prediction_frames = []
 
     for split in splits:
-        records.append(
-            evaluate_split(
-                model_name=model_name,
-                protocol=protocol,
-                model=model,
-                df=df,
-                split=split,
-                feature_columns=feature_columns,
-                class_labels=class_labels,
-            )
+        metrics, predictions = evaluate_split(
+            model_name=model_name,
+            protocol=protocol,
+            model=model,
+            df=df,
+            split=split,
+            feature_columns=feature_columns,
+            class_labels=class_labels,
         )
+        records.append(metrics)
+        prediction_frames.append(predictions)
 
         if progress_callback is not None:
             progress_callback(1)
 
-    return pd.DataFrame.from_records(records)
+    return (
+        pd.DataFrame.from_records(records),
+        pd.concat(prediction_frames, ignore_index=True),
+    )
 
 
 def run_experiment(
     experiment: Experiment,
     progress_callback: Callable[[int], object] | None = None,
-) -> pd.DataFrame:
-    """Evaluate every model under every protocol in an experiment."""
+) -> ExperimentOutput:
+    """Evaluate every model and return metrics plus predictions."""
     feature_columns = get_feature_columns(
         experiment.data
     )
@@ -168,10 +191,11 @@ def run_experiment(
     )
 
     experiment_results = []
+    experiment_predictions = []
 
     for model_name, model in experiment.models.items():
         for protocol_name, splits in experiment.protocols.items():
-            results = evaluate_model(
+            metrics, predictions = evaluate_model(
                 model_name=model_name,
                 protocol=protocol_name,
                 model=model,
@@ -182,9 +206,16 @@ def run_experiment(
                 progress_callback=progress_callback,
             )
 
-            experiment_results.append(results)
+            experiment_results.append(metrics)
+            experiment_predictions.append(predictions)
 
-    return pd.concat(
-        experiment_results,
-        ignore_index=True,
+    return ExperimentOutput(
+        metrics=pd.concat(
+            experiment_results,
+            ignore_index=True,
+        ),
+        predictions=pd.concat(
+            experiment_predictions,
+            ignore_index=True,
+        ),
     )

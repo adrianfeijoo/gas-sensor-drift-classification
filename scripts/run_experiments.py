@@ -173,8 +173,9 @@ def get_total_splits(
 def save_results(
     results: pd.DataFrame,
     output_path: Path,
+    artifact_name: str = "Results",
 ) -> None:
-    """Save experiment results to disk."""
+    """Save one experiment artifact to disk."""
     output_path.parent.mkdir(
         parents=True,
         exist_ok=True,
@@ -185,7 +186,16 @@ def save_results(
         index=False,
     )
 
-    print(f"Results saved to {output_path}")
+    print(f"{artifact_name} saved to {output_path}")
+
+
+def prediction_output_path(
+    metrics_output_path: Path,
+) -> Path:
+    """Return the prediction artifact path for an experiment."""
+    return metrics_output_path.with_name(
+        f"{metrics_output_path.stem}_predictions.csv"
+    )
 
 
 def main() -> None:
@@ -203,14 +213,22 @@ def main() -> None:
         desc="Running experiment",
         unit="split",
     ) as progress_bar:
-        results = run_experiment(
+        experiment_output = run_experiment(
             experiment,
             progress_callback=progress_bar.update,
         )
 
     save_results(
-        results=results,
+        results=experiment_output.metrics,
         output_path=experiment.output_path,
+        artifact_name="Metrics",
+    )
+    save_results(
+        results=experiment_output.predictions,
+        output_path=prediction_output_path(
+            experiment.output_path
+        ),
+        artifact_name="Predictions",
     )
 
 
