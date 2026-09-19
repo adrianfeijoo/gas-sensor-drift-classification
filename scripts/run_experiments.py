@@ -1,3 +1,7 @@
+import argparse
+from dataclasses import dataclass
+from pathlib import Path
+
 import pandas as pd
 from sklearn.base import BaseEstimator
 from tqdm import tqdm
@@ -16,12 +20,30 @@ from src.experiments import evaluate_model
 from src.models import build_logistic_regression
 
 
-def load_development_data() -> pd.DataFrame:
-    """Load processed data and exclude the final temporal holdout."""
-    df = pd.read_csv(PROCESSED_DATA_PATH)
-    development, _ = split_development_holdout(df)
+@dataclass(frozen=True)
+class Experiment:
+    """Configuration required to run one experiment."""
 
-    return development
+    data: pd.DataFrame
+    models: dict[str, BaseEstimator]
+    protocols: dict[str, list[EvaluationSplit]]
+    output_path: Path
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Run model evaluation experiments.",
+    )
+
+    parser.add_argument(
+        "--experiment",
+        required=True,
+        choices=["logreg_tuning"],
+        help="Experiment to run.",
+    )
+
+    return parser.parse_args()
 
 
 def get_feature_columns(
@@ -45,7 +67,7 @@ def get_feature_columns(
 def get_class_labels(
     df: pd.DataFrame,
 ) -> tuple[int, ...]:
-    """Return all target classes present in development data."""
+    """Return all target classes present in the experiment data."""
     return tuple(
         sorted(
             int(label)
@@ -54,17 +76,20 @@ def get_class_labels(
     )
 
 
-def build_models() -> dict[str, BaseEstimator]:
-    """Define models included in the development experiments."""
-    return {
-        "logistic_regression": build_logistic_regression(),
+def build_logreg_tuning_experiment(
+    df: pd.DataFrame,
+) -> Experiment:
+    """Build the logistic-regression regularization experiment."""
+    development, _ = split_development_holdout(df)
+
+    models = {
+        "logreg_C0.01": build_logistic_regression(C=0.01),
+        "logreg_C0.1": build_logistic_regression(C=0.1),
+        "logreg_C1": build_logistic_regression(C=1.0),
+        "logreg_C10": build_logistic_regression(C=10.0),
     }
 
-def build_protocols(
-    development: pd.DataFrame,
-) -> dict[str, list[EvaluationSplit]]:
-    """Define evaluation protocols used during model development."""
-    return {
+    protocols = {
         "random_stratified": random_stratified_splits(
             development
         ),
@@ -73,34 +98,51 @@ def build_protocols(
         ),
     }
 
+    return Experiment(
+        data=development,
+        models=models,
+        protocols=protocols,
+        output_path=RESULTS_DIR / "logreg_tuning.csv",
+    )
 
-def run_experiments(
-    development: pd.DataFrame,
+
+def build_experiment(
+    name: str,
+    df: pd.DataFrame,
+) -> Experiment:
+    """Build an experiment from its command-line name."""
+    if name == "logreg_tuning":
+        return build_logreg_tuning_experiment(df)
+
+    raise ValueError(f"Unknown experiment: {name}")
+
+
+def run_experiment(
+    experiment: Experiment,
 ) -> pd.DataFrame:
-    """Evaluate all configured models under all development protocols."""
-    feature_columns = get_feature_columns(development)
-    class_labels = get_class_labels(development)
+    """Evaluate all models under all protocols in an experiment."""
+    feature_columns = get_feature_columns(experiment.data)
+    class_labels = get_class_labels(experiment.data)
 
-    models = build_models()
-    protocols = build_protocols(development)
-    total_splits = len(models) * sum(
-        len(splits) for splits in protocols.values()
+    total_splits = len(experiment.models) * sum(
+        len(splits)
+        for splits in experiment.protocols.values()
     )
 
     experiment_results = []
 
     with tqdm(
         total=total_splits,
-        desc="Running experiments",
+        desc="Running experiment",
         unit="split",
     ) as progress_bar:
-        for model_name, model in models.items():
-            for protocol_name, splits in protocols.items():
+        for model_name, model in experiment.models.items():
+            for protocol_name, splits in experiment.protocols.items():
                 results = evaluate_model(
                     model_name=model_name,
                     protocol=protocol_name,
                     model=model,
-                    df=development,
+                    df=experiment.data,
                     splits=splits,
                     feature_columns=feature_columns,
                     class_labels=class_labels,
@@ -117,16 +159,12 @@ def run_experiments(
 
 def save_results(
     results: pd.DataFrame,
+    output_path: Path,
 ) -> None:
-    """Save development experiment results."""
-    RESULTS_DIR.mkdir(
+    """Save experiment results to disk."""
+    output_path.parent.mkdir(
         parents=True,
         exist_ok=True,
-    )
-
-    output_path = (
-        RESULTS_DIR
-        / "development_results.csv"
     )
 
     results.to_csv(
@@ -138,10 +176,23 @@ def save_results(
 
 
 def main() -> None:
-    development = load_development_data()
-    results = run_experiments(development)
-    save_results(results)
+    args = parse_args()
+
+    df = pd.read_csv(PROCESSED_DATA_PATH)
+
+    experiment = build_experiment(
+        name=args.experiment,
+        df=df,
+    )
+
+    results = run_experiment(experiment)
+
+    save_results(
+        results=results,
+        output_path=experiment.output_path,
+    )
 
 
 if __name__ == "__main__":
     main()
+    
