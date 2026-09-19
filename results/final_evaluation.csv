@@ -1,0 +1,2 @@
+model,protocol,split,train_batches,validation_batches,validation_batch,n_train,n_validation,macro_f1,accuracy,f1_class_1,f1_class_2,f1_class_3,f1_class_4,f1_class_5,f1_class_6
+logreg_C10,final_holdout,batches_1-9_to_10,"(1, 2, 3, 4, 5, 6, 7, 8, 9)","(10,)",10,10310,3600,0.6632215991314601,0.675,0.6438267614738203,0.8826205641492265,0.5262032085561498,0.47919010123734535,0.7229299363057324,0.7245590230664858
