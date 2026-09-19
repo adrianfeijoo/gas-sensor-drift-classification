@@ -89,6 +89,34 @@ def build_logreg_tuning_experiment(
     )
 
 
+def build_xgboost_tuning_experiment(
+    df: pd.DataFrame,
+) -> Experiment:
+    """Build the XGBoost tree-depth experiment."""
+    development, _ = split_development_holdout(df)
+
+    models: dict[str, BaseEstimator] = {
+        "xgboost_depth2": build_xgboost(
+            max_depth=2
+        ),
+        "xgboost_depth4": build_xgboost(
+            max_depth=4
+        ),
+        "xgboost_depth6": build_xgboost(
+            max_depth=6
+        ),
+    }
+
+    return Experiment(
+        data=development,
+        models=models,
+        protocols=build_development_protocols(
+            development
+        ),
+        output_path=RESULTS_DIR / "xgboost_tuning.csv",
+    )
+
+
 def build_experiment(
     name: str,
     df: pd.DataFrame,
@@ -96,6 +124,9 @@ def build_experiment(
     """Build an experiment from its command-line name."""
     if name == "logreg_tuning":
         return build_logreg_tuning_experiment(df)
+
+    if name == "xgboost_tuning":
+        return build_xgboost_tuning_experiment(df)
 
     raise ValueError(f"Unknown experiment: {name}")
 
