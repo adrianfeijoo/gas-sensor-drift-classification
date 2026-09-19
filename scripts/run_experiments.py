@@ -12,6 +12,7 @@ from src.config import (
 from src.evaluation import (
     EvaluationSplit,
     expanding_window_splits,
+    final_holdout_split,
     random_stratified_splits,
     split_development_holdout,
 )
@@ -37,6 +38,7 @@ def parse_args() -> argparse.Namespace:
         choices=[
             "logreg_tuning",
             "xgboost_tuning",
+            "final_evaluation",
         ],
         help="Experiment to run.",
     )
@@ -117,6 +119,30 @@ def build_xgboost_tuning_experiment(
     )
 
 
+def build_final_evaluation_experiment(
+    df: pd.DataFrame,
+) -> Experiment:
+    """Build the final holdout evaluation experiment."""
+    models: dict[str, BaseEstimator] = {
+        "logreg_C10": build_logistic_regression(
+            C=10.0
+        ),
+    }
+
+    protocols = {
+        "final_holdout": final_holdout_split(
+            df
+        ),
+    }
+
+    return Experiment(
+        data=df,
+        models=models,
+        protocols=protocols,
+        output_path=RESULTS_DIR / "final_evaluation.csv",
+    )
+
+
 def build_experiment(
     name: str,
     df: pd.DataFrame,
@@ -127,6 +153,9 @@ def build_experiment(
 
     if name == "xgboost_tuning":
         return build_xgboost_tuning_experiment(df)
+
+    if name == "final_evaluation":
+        return build_final_evaluation_experiment(df)
 
     raise ValueError(f"Unknown experiment: {name}")
 

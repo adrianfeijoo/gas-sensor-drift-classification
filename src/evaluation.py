@@ -131,6 +131,47 @@ def expanding_window_splits(
     return splits
 
 
+def final_holdout_split(
+    df: pd.DataFrame,
+    holdout_batch: int = DEFAULT_HOLDOUT_BATCH,
+) -> list[EvaluationSplit]:
+    """Build the final train/holdout evaluation split."""
+    train_mask = df["batch"] != holdout_batch
+    holdout_mask = df["batch"] == holdout_batch
+
+    train_indices = np.flatnonzero(
+        train_mask.to_numpy()
+    )
+    holdout_indices = np.flatnonzero(
+        holdout_mask.to_numpy()
+    )
+
+    if len(holdout_indices) == 0:
+        raise ValueError(
+            f"Holdout batch {holdout_batch} is not present."
+        )
+
+    train_batches = tuple(
+        sorted(
+            int(batch)
+            for batch in df.loc[
+                train_mask,
+                "batch",
+            ].unique()
+        )
+    )
+
+    return [
+        EvaluationSplit(
+            name=f"batches_1-{holdout_batch - 1}_to_{holdout_batch}",
+            train_indices=train_indices,
+            validation_indices=holdout_indices,
+            train_batches=train_batches,
+            validation_batches=(holdout_batch,),
+        )
+    ]
+
+
 def classification_metrics(
     y_true: np.ndarray,
     y_pred: np.ndarray,
