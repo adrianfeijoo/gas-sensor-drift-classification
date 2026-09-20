@@ -184,6 +184,8 @@ Los CSV de `results/` se versionan para poder revisar el análisis sin reentrena
 
 ## Instalación y ejecución
 
+Requiere **Python ≥3.12**. Probado con Python 3.14.7 en Linux (x86_64).
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -235,4 +237,3 @@ Se utilizaron asistentes de IA para acelerar tareas de implementación y ayudar 
 **Partes desarrolladas con asistencia:** generación de parte del código, refactorizaciones y generación de celdas repetitivas de análisis.
 
 Todos los resultados reportados proceden de la ejecución del código versionado en el repositorio.
-
